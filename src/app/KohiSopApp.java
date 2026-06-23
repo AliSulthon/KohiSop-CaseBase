@@ -6,14 +6,19 @@ import order.Order;
 import order.OrderItem;
 import payment.*;
 
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Scanner;
 
 public class KohiSopApp {
 
     private static final Scanner sc = new Scanner(System.in);
-    private static final List<MenuItem> menuMinuman = MenuData.getMenuMinuman();
-    private static final List<MenuItem> menuMakanan = MenuData.getMenuMakanan();
+    private static final List<MenuItem> menuMinuman = MenuData.getMenuMinumanUrutKode();
+    private static final List<MenuItem> menuMakanan = MenuData.getMenuMakananUrutKode();
+    private static final Comparator<OrderItem> ORDER_ITEM_BY_HARGA =
+            Comparator.comparingDouble((OrderItem oi) -> oi.getItem().getHarga())
+                    .thenComparing(oi -> oi.getItem().getKode(), String.CASE_INSENSITIVE_ORDER);
 
     // =====================================================================
     // MAIN
@@ -50,17 +55,17 @@ public class KohiSopApp {
     // =====================================================================
     private static void tampilkanMenu() {
         System.out.println("\n" + "=".repeat(60));
-        System.out.printf("%-6s %-34s %s%n", "Kode", "Menu Minuman", "Harga (Rp)");
-        System.out.println("-".repeat(60));
-        for (MenuItem m : menuMinuman)
-            System.out.printf("%-6s %-34s %d%n", m.getKode(), m.getNama(), (int) m.getHarga());
-
+        cetakKelompokMenu("Menu Makanan", menuMakanan);
         System.out.println("\n" + "-".repeat(60));
-        System.out.printf("%-6s %-34s %s%n", "Kode", "Menu Makanan", "Harga (Rp)");
-        System.out.println("-".repeat(60));
-        for (MenuItem m : menuMakanan)
-            System.out.printf("%-6s %-34s %d%n", m.getKode(), m.getNama(), (int) m.getHarga());
+        cetakKelompokMenu("Menu Minuman", menuMinuman);
         System.out.println("=".repeat(60));
+    }
+
+    private static void cetakKelompokMenu(String judul, List<MenuItem> items) {
+        System.out.printf("%-6s %-34s %s%n", "Kode", judul, "Harga (Rp)");
+        System.out.println("-".repeat(60));
+        for (MenuItem m : items)
+            System.out.printf("%-6s %-34s %d%n", m.getKode(), m.getNama(), (int) m.getHarga());
     }
 
     // =====================================================================
@@ -77,7 +82,7 @@ public class KohiSopApp {
             }
 
             System.out.print("Kode > ");
-            String input = sc.nextLine().trim();
+            String input = MenuData.normalisasiKode(sc.nextLine());
 
             if (input.equalsIgnoreCase("CC")) return null;
             if (input.equalsIgnoreCase("FF")) {
@@ -122,31 +127,33 @@ public class KohiSopApp {
         System.out.println("\nMasukkan jumlah untuk setiap pesanan.");
         System.out.println("(Tekan Enter = 1 porsi, '0' atau 'S' = batalkan item, 'CC' = batalkan semua)");
 
-        // --- Minuman ---
-        List<OrderItem> toRemoveMin = new java.util.ArrayList<>();
-        for (OrderItem oi : order.getDaftarMinuman()) {
-            tampilkanDaftarPesanan(order);
-            System.out.printf("Jumlah [%s] %s (max 3 porsi): ", oi.getItem().getKode(), oi.getItem().getNama());
-
-            Integer qty = bacaKuantitas(3);
-            if (qty == null) { order.getDaftarMinuman().clear(); order.getDaftarMakanan().clear(); return; }
-            if (qty == 0) { toRemoveMin.add(oi); System.out.println("Item dibatalkan."); }
-            else oi.setKuantitas(qty);
+        if (!inputKuantitasUntuk(order, order.getDaftarMakanan(), "makanan", 2)) {
+            order.kosongkan();
+            return;
         }
-        order.getDaftarMinuman().removeAll(toRemoveMin);
-
-        // --- Makanan ---
-        List<OrderItem> toRemoveMak = new java.util.ArrayList<>();
-        for (OrderItem oi : order.getDaftarMakanan()) {
-            tampilkanDaftarPesanan(order);
-            System.out.printf("Jumlah [%s] %s (max 2 porsi): ", oi.getItem().getKode(), oi.getItem().getNama());
-
-            Integer qty = bacaKuantitas(2);
-            if (qty == null) { order.getDaftarMinuman().clear(); order.getDaftarMakanan().clear(); return; }
-            if (qty == 0) { toRemoveMak.add(oi); System.out.println("Item dibatalkan."); }
-            else oi.setKuantitas(qty);
+        if (!inputKuantitasUntuk(order, order.getDaftarMinuman(), "minuman", 3)) {
+            order.kosongkan();
         }
-        order.getDaftarMakanan().removeAll(toRemoveMak);
+    }
+
+    private static boolean inputKuantitasUntuk(Order order, List<OrderItem> daftar, String kategori, int max) {
+        List<OrderItem> toRemove = new ArrayList<>();
+        for (OrderItem oi : urutkanOrderItemsByHarga(daftar)) {
+            tampilkanDaftarPesanan(order);
+            System.out.printf("Jumlah [%s] %s (max %d porsi %s): ",
+                    oi.getItem().getKode(), oi.getItem().getNama(), max, kategori);
+
+            Integer qty = bacaKuantitas(max);
+            if (qty == null) return false;
+            if (qty == 0) {
+                toRemove.add(oi);
+                System.out.println("Item dibatalkan.");
+            } else {
+                oi.setKuantitas(qty);
+            }
+        }
+        daftar.removeAll(toRemove);
+        return true;
     }
 
     /**
@@ -173,19 +180,24 @@ public class KohiSopApp {
 
     private static void tampilkanDaftarPesanan(Order order) {
         System.out.println("\n--- Daftar Pesanan Saat Ini ---");
-        if (!order.getDaftarMinuman().isEmpty()) {
-            System.out.printf("%-6s %-34s %s%n", "Kode", "Minuman", "Qty");
-            System.out.println("-".repeat(48));
-            for (OrderItem oi : order.getDaftarMinuman())
-                System.out.printf("%-6s %-34s %d%n", oi.getItem().getKode(), oi.getItem().getNama(), oi.getKuantitas());
-        }
         if (!order.getDaftarMakanan().isEmpty()) {
-            System.out.printf("%-6s %-34s %s%n", "Kode", "Makanan", "Qty");
-            System.out.println("-".repeat(48));
-            for (OrderItem oi : order.getDaftarMakanan())
-                System.out.printf("%-6s %-34s %d%n", oi.getItem().getKode(), oi.getItem().getNama(), oi.getKuantitas());
+            cetakDaftarPesananKategori("Makanan", order.getDaftarMakanan());
+        }
+        if (!order.getDaftarMinuman().isEmpty()) {
+            cetakDaftarPesananKategori("Minuman", order.getDaftarMinuman());
         }
         System.out.println();
+    }
+
+    private static void cetakDaftarPesananKategori(String kategori, List<OrderItem> items) {
+        System.out.printf("%-6s %-34s %8s %5s%n", "Kode", kategori, "Harga", "Qty");
+        System.out.println("-".repeat(58));
+        for (OrderItem oi : urutkanOrderItemsByHarga(items))
+            System.out.printf("%-6s %-34s %8.2f %5d%n",
+                    oi.getItem().getKode(),
+                    oi.getItem().getNama(),
+                    oi.getItem().getHarga(),
+                    oi.getKuantitas());
     }
 
     // =====================================================================
@@ -273,83 +285,75 @@ public class KohiSopApp {
     // 6. CETAK KUITANSI
     // =====================================================================
     private static void cetakKuitansi(Order order, PaymentChannel payment, Currency currency) {
-        String sep  = "=".repeat(64);
-        String line = "-".repeat(64);
+        String sep  = "=".repeat(100);
+        String line = "-".repeat(100);
 
         System.out.println("\n" + sep);
-        cetakTengah("KUITANSI KohiSop", 64);
+        cetakTengah("KUITANSI KohiSop", 100);
         System.out.println(sep);
 
-        // --- Minuman ---
-        if (!order.getDaftarMinuman().isEmpty()) {
-            System.out.printf("%-6s %-26s %5s %8s %8s%n", "Kode", "Minuman", "Qty", "Harga", "Pajak");
-            System.out.println(line);
-            for (OrderItem oi : order.getDaftarMinuman()) {
-                System.out.printf("%-6s %-26s %5d %8.2f %7.0f%%%n",
-                        oi.getItem().getKode(),
-                        oi.getItem().getNama(),
-                        oi.getKuantitas(),
-                        oi.getItem().getHarga(),
-                        oi.getPajakRate() * 100);
-                System.out.printf("%-6s %-26s %5s %8.2f + pajak %7.2f = %8.2f%n",
-                        "", "", "",
-                        oi.getSubtotalSebelumPajak(),
-                        oi.getTotalPajak(),
-                        oi.getSubtotalSetelahPajak());
-            }
-            System.out.println(line);
-            System.out.printf("%-38s %8.2f%n", "Total Minuman (sebelum pajak):", order.getTotalMinumanSebelumPajak());
-            System.out.printf("%-38s %8.2f%n", "Total Minuman (setelah pajak):",  order.getTotalMinumanSetelahPajak());
-        }
+        cetakBagianKuitansi("Makanan", order.getDaftarMakanan(),
+                order.getTotalMakananSebelumPajak(), order.getTotalMakananSetelahPajak(), line);
+        cetakBagianKuitansi("Minuman", order.getDaftarMinuman(),
+                order.getTotalMinumanSebelumPajak(), order.getTotalMinumanSetelahPajak(), line);
 
-        // --- Makanan ---
-        if (!order.getDaftarMakanan().isEmpty()) {
-            System.out.println();
-            System.out.printf("%-6s %-26s %5s %8s %8s%n", "Kode", "Makanan", "Qty", "Harga", "Pajak");
-            System.out.println(line);
-            for (OrderItem oi : order.getDaftarMakanan()) {
-                System.out.printf("%-6s %-26s %5d %8.2f %7.0f%%%n",
-                        oi.getItem().getKode(),
-                        oi.getItem().getNama(),
-                        oi.getKuantitas(),
-                        oi.getItem().getHarga(),
-                        oi.getPajakRate() * 100);
-                System.out.printf("%-6s %-26s %5s %8.2f + pajak %7.2f = %8.2f%n",
-                        "", "", "",
-                        oi.getSubtotalSebelumPajak(),
-                        oi.getTotalPajak(),
-                        oi.getSubtotalSetelahPajak());
-            }
-            System.out.println(line);
-            System.out.printf("%-38s %8.2f%n", "Total Makanan (sebelum pajak):", order.getTotalMakananSebelumPajak());
-            System.out.printf("%-38s %8.2f%n", "Total Makanan (setelah pajak):",  order.getTotalMakananSetelahPajak());
-        }
-
-        // --- Ringkasan Pembayaran ---
         double totalSebelumPajak = order.getTotalSebelumPajak();
         double totalSetelahPajak = order.getTotalSetelahPajak();
         double diskon            = payment.hitungDiskon(totalSetelahPajak);
         double totalFinal        = payment.hitungTotal(totalSetelahPajak);
 
-        // Konversi ke mata uang terpilih
         double totalSebelumPajakMU = currency.konversiDariIDR(totalSebelumPajak);
         double totalFinalMU        = currency.konversiDariIDR(totalFinal);
 
         System.out.println(sep);
-        System.out.printf("%-38s %8.2f IDR%n", "Grand Total (sebelum pajak):", totalSebelumPajak);
-        System.out.printf("%-38s %8.2f IDR%n", "Grand Total (setelah pajak):", totalSetelahPajak);
-        System.out.printf("%-38s %8.2f IDR%n", "Diskon " + payment.getNamaChannel() + " (" + (int)(payment.getDiskon()*100) + "%):", diskon);
+        System.out.printf("%-48s %12.2f IDR%n", "Grand Total (sebelum pajak):", totalSebelumPajak);
+        System.out.printf("%-48s %12.2f IDR%n", "Grand Total (setelah pajak):", totalSetelahPajak);
+        System.out.printf("%-48s %12.2f IDR%n", "Diskon " + payment.getNamaChannel() + " (" + (int)(payment.getDiskon()*100) + "%):", diskon);
         if (payment.getBiayaAdmin() > 0)
-            System.out.printf("%-38s %8.2f IDR%n", "Biaya Admin:", payment.getBiayaAdmin());
+            System.out.printf("%-48s %12.2f IDR%n", "Biaya Admin:", payment.getBiayaAdmin());
         System.out.println(line);
-        System.out.printf("%-38s %8.2f IDR%n", "Total Tagihan (IDR):", totalFinal);
+        System.out.printf("%-48s %12.2f IDR%n", "Total Tagihan (IDR):", totalFinal);
         System.out.println();
-        System.out.printf("Mata Uang Pembayaran  : %s%n", currency.getNamaMataUang());
-        System.out.printf("Total Sebelum Pajak   : %s %.4f%n", currency.getSimbol(), totalSebelumPajakMU);
-        System.out.printf("Total Tagihan Akhir   : %s %.4f%n", currency.getSimbol(), totalFinalMU);
+        System.out.printf("Mata Uang Pembayaran           : %s%n", currency.getNamaMataUang());
+        System.out.printf("Total sebelum pajak (%s)       : %s %.4f%n",
+                currency.getNamaMataUang(), currency.getSimbol(), totalSebelumPajakMU);
+        System.out.printf("Total tagihan akhir (%s)       : %s %.4f%n",
+                currency.getNamaMataUang(), currency.getSimbol(), totalFinalMU);
         System.out.println(sep);
-        cetakTengah("Terima kasih dan silakan datang kembali!", 64);
+        cetakTengah("Terima kasih dan silakan datang kembali!", 100);
         System.out.println(sep);
+    }
+
+    private static void cetakBagianKuitansi(String kategori, List<OrderItem> items,
+                                            double totalSebelumPajak,
+                                            double totalSetelahPajak,
+                                            String line) {
+        if (items.isEmpty()) return;
+
+        System.out.printf("%n%s%n", kategori.toUpperCase());
+        System.out.printf("%-6s %-38s %5s %9s %10s %14s %10s%n",
+                "Kode", "Nama", "Qty", "Harga", "Subtotal", "Pajak", "Total");
+        System.out.println(line);
+        for (OrderItem oi : urutkanOrderItemsByHarga(items)) {
+            String pajak = String.format("%.2f (%.0f%%)", oi.getTotalPajak(), oi.getPajakRate() * 100);
+            System.out.printf("%-6s %-38s %5d %9.2f %10.2f %14s %10.2f%n",
+                    oi.getItem().getKode(),
+                    oi.getItem().getNama(),
+                    oi.getKuantitas(),
+                    oi.getItem().getHarga(),
+                    oi.getSubtotalSebelumPajak(),
+                    pajak,
+                    oi.getSubtotalSetelahPajak());
+        }
+        System.out.println(line);
+        System.out.printf("%-63s %10.2f IDR%n", "Total " + kategori + " (sebelum pajak):", totalSebelumPajak);
+        System.out.printf("%-63s %10.2f IDR%n", "Total " + kategori + " (setelah pajak):", totalSetelahPajak);
+    }
+
+    private static List<OrderItem> urutkanOrderItemsByHarga(List<OrderItem> items) {
+        List<OrderItem> sorted = new ArrayList<>(items);
+        sorted.sort(ORDER_ITEM_BY_HARGA);
+        return sorted;
     }
 
     // =====================================================================

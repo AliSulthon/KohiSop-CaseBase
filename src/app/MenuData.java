@@ -4,9 +4,12 @@ import menu.MenuItem;
 import menu.DrinkItem;
 import menu.FoodItem;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 
 public class MenuData {
+    private static final Comparator<MenuItem> SORT_BY_KODE =
+            Comparator.comparing(MenuItem::getKode, String.CASE_INSENSITIVE_ORDER);
 
     public static List<MenuItem> getMenuMinuman() {
         List<MenuItem> list = new ArrayList<>();
@@ -36,11 +39,31 @@ public class MenuData {
         return list;
     }
 
+    public static List<MenuItem> getMenuMinumanUrutKode() {
+        return urutkanByKode(getMenuMinuman());
+    }
+
+    public static List<MenuItem> getMenuMakananUrutKode() {
+        return urutkanByKode(getMenuMakanan());
+    }
+
+    public static String normalisasiKode(String kode) {
+        if (kode == null) return "";
+        return kode.replaceAll("\\s+", "").toUpperCase();
+    }
+
     public static MenuItem cariByKode(String kode, List<MenuItem> minuman, List<MenuItem> makanan) {
+        String target = normalisasiKode(kode);
         for (MenuItem m : minuman)
-            if (m.getKode().equalsIgnoreCase(kode)) return m;
+            if (m.getKode().equalsIgnoreCase(target)) return m;
         for (MenuItem m : makanan)
-            if (m.getKode().equalsIgnoreCase(kode)) return m;
+            if (m.getKode().equalsIgnoreCase(target)) return m;
         return null;
+    }
+
+    private static List<MenuItem> urutkanByKode(List<MenuItem> menu) {
+        List<MenuItem> sorted = new ArrayList<>(menu);
+        sorted.sort(SORT_BY_KODE);
+        return sorted;
     }
 }

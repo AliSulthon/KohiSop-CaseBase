@@ -1,15 +1,15 @@
 package order;
 
 import menu.MenuItem;
-import java.util.ArrayList;
+import java.util.LinkedList;
 import java.util.List;
 
 public class Order {
     private static final int MAX_JENIS_MINUMAN = 5;
     private static final int MAX_JENIS_MAKANAN = 5;
 
-    private List<OrderItem> daftarMinuman = new ArrayList<>();
-    private List<OrderItem> daftarMakanan = new ArrayList<>();
+    private final List<OrderItem> daftarMinuman = new LinkedList<>();
+    private final List<OrderItem> daftarMakanan = new LinkedList<>();
 
     public boolean tambahItem(MenuItem item, int kuantitas) {
         OrderItem oi = new OrderItem(item, kuantitas);
@@ -39,10 +39,15 @@ public class Order {
     public List<OrderItem> getDaftarMakanan() { return daftarMakanan; }
 
     public List<OrderItem> semuaItem() {
-        List<OrderItem> all = new ArrayList<>();
+        List<OrderItem> all = new LinkedList<>();
         all.addAll(daftarMinuman);
         all.addAll(daftarMakanan);
         return all;
+    }
+
+    public void kosongkan() {
+        daftarMinuman.clear();
+        daftarMakanan.clear();
     }
 
     public double getTotalMinumanSebelumPajak() {
