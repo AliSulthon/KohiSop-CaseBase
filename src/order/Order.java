@@ -50,6 +50,12 @@ public class Order {
         daftarMakanan.clear();
     }
 
+    /** Bebaskan pajak semua item (untuk member dengan kode mengandung 'A') */
+    public void bebaskanPajak() {
+        for (OrderItem oi : daftarMinuman) oi.setPajakDibebaskan(true);
+        for (OrderItem oi : daftarMakanan) oi.setPajakDibebaskan(true);
+    }
+
     public double getTotalMinumanSebelumPajak() {
         return daftarMinuman.stream().mapToDouble(OrderItem::getSubtotalSebelumPajak).sum();
     }
