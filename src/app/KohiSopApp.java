@@ -1,6 +1,9 @@
 package app;
 
 import currency.*;
+import kitchen.KitchenProcessor;
+import member.Member;
+import member.MemberDatabase;
 import menu.MenuItem;
 import order.Order;
 import order.OrderItem;
@@ -20,34 +23,85 @@ public class KohiSopApp {
             Comparator.comparingDouble((OrderItem oi) -> oi.getItem().getHarga())
                     .thenComparing(oi -> oi.getItem().getKode(), String.CASE_INSENSITIVE_ORDER);
 
+    // Kitchen batch tracker
+    private static int customerCount = 0;
+    private static final List<List<OrderItem>> kitchenBatch = new ArrayList<>();
+
     // =====================================================================
     // MAIN
     // =====================================================================
     public static void main(String[] args) {
-        cetakHeader("Selamat Datang di KohiSop");
+        boolean lanjut = true;
+        while (lanjut) {
+            cetakHeader("Selamat Datang di KohiSop");
 
-        tampilkanMenu();
+            tampilkanMenu();
 
-        Order order = inputPesanan();
-        if (order == null) {
-            System.out.println("\nPesanan dibatalkan. Terima kasih!");
-            return;
+            Order order = inputPesanan();
+            if (order == null) {
+                System.out.println("\nPesanan dibatalkan. Terima kasih!");
+            } else {
+                inputKuantitas(order);
+                if (order.isEmpty()) {
+                    System.out.println("\nTidak ada pesanan. Transaksi dibatalkan.");
+                } else {
+                    Currency currency = pilihMataUang();
+
+                    // --- Membership flow ---
+                    Member member = handleMembership();
+
+                    // --- Payment ---
+                    double totalSetelahPajak = order.getTotalSetelahPajak();
+
+                    // Tawarkan redeem poin jika IDR & punya poin
+                    double potonganPoin = 0;
+                    int poinSebelum = 0;
+                    if (member != null) {
+                        poinSebelum = member.getPoints();
+                        if (currency.getNamaMataUang().equals("IDR") && member.getPoints() > 0) {
+                            potonganPoin = tawarRedeemPoin(member, totalSetelahPajak);
+                        }
+                    }
+                    double totalSetelahRedeem = totalSetelahPajak - potonganPoin;
+
+                    PaymentChannel payment = pilihPembayaran(totalSetelahRedeem, currency);
+                    if (payment == null) {
+                        System.out.println("\nPembayaran gagal. Transaksi dibatalkan.");
+                    } else {
+                        // --- Hitung & tambah poin ---
+                        int poinDapat = 0;
+                        int poinSesudah = 0;
+                        if (member != null) {
+                            poinDapat = hitungPoin(totalSetelahPajak, member.getMemberCode());
+                            member.addPoints(poinDapat);
+                            poinSesudah = member.getPoints();
+                        }
+
+                        cetakKuitansi(order, payment, currency, member,
+                                poinSebelum, poinDapat, poinSesudah, potonganPoin);
+
+                        // --- Kitchen tracking ---
+                        List<OrderItem> allItems = new ArrayList<>();
+                        allItems.addAll(order.getDaftarMakanan());
+                        allItems.addAll(order.getDaftarMinuman());
+                        kitchenBatch.add(allItems);
+                        customerCount++;
+
+                        if (customerCount == 3) {
+                            KitchenProcessor.processKitchenOrders(kitchenBatch);
+                            kitchenBatch.clear();
+                            customerCount = 0;
+                        }
+                    }
+                }
+            }
+
+            System.out.print("\nTransaksi lain? (Y/N) > ");
+            String jawab = sc.nextLine().trim();
+            lanjut = jawab.equalsIgnoreCase("Y");
         }
 
-        inputKuantitas(order);
-        if (order.isEmpty()) {
-            System.out.println("\nTidak ada pesanan. Program selesai.");
-            return;
-        }
-
-        Currency currency = pilihMataUang();
-        PaymentChannel payment = pilihPembayaran(order.getTotalSetelahPajak(), currency);
-        if (payment == null) {
-            System.out.println("\nPembayaran gagal. Program selesai.");
-            return;
-        }
-
-        cetakKuitansi(order, payment, currency);
+        System.out.println("\nTerima kasih telah menggunakan KohiSop!");
     }
 
     // =====================================================================
@@ -156,9 +210,6 @@ public class KohiSopApp {
         return true;
     }
 
-    /**
-     * Baca kuantitas dari input. Kembalikan null jika CC, 0 jika skip/0.
-     */
     private static Integer bacaKuantitas(int max) {
         while (true) {
             String raw = sc.nextLine().trim();
@@ -226,7 +277,75 @@ public class KohiSopApp {
     }
 
     // =====================================================================
-    // 5. PILIH CHANNEL PEMBAYARAN
+    // 5. MEMBERSHIP
+    // =====================================================================
+
+    /**
+     * Tanya nama pelanggan. Jika sudah ada di DB -> pakai data lama.
+     * Jika baru -> buat member baru dengan kode random.
+     */
+    private static Member handleMembership() {
+        System.out.print("\nMasukkan nama Anda > ");
+        String nama = sc.nextLine().trim();
+        if (nama.isEmpty()) {
+            System.out.println("Nama kosong. Transaksi tanpa membership.");
+            return null;
+        }
+
+        Member member = MemberDatabase.findMemberByName(nama);
+        if (member != null) {
+            System.out.println("Selamat datang kembali, " + member.getMemberName() + "!");
+            System.out.println("Kode Member : " + member.getMemberCode());
+            System.out.println("Poin Saat Ini: " + member.getPoints());
+        } else {
+            String kode = MemberDatabase.generateMemberCode();
+            member = new Member(kode, nama, 0);
+            MemberDatabase.addMember(member);
+            System.out.println("Member baru terdaftar!");
+            System.out.println("Nama        : " + member.getMemberName());
+            System.out.println("Kode Member : " + member.getMemberCode());
+        }
+        return member;
+    }
+
+    // =====================================================================
+    // 6. POINT SYSTEM
+    // =====================================================================
+
+    /**
+     * Hitung poin dari total belanja (sebelum redeem).
+     * 1 poin per 10 IDR. Jika kode mengandung 'A', poin digandakan.
+     */
+    private static int hitungPoin(double totalBelanja, String memberCode) {
+        int poin = (int)(totalBelanja / 10);
+        if (memberCode.contains("A")) {
+            poin *= 2;
+        }
+        return poin;
+    }
+
+    /**
+     * Tawarkan redeem poin kepada member.
+     * Hanya bisa jika bayar IDR.
+     * Return potongan IDR yang digunakan (0 jika tidak redeem).
+     */
+    private static double tawarRedeemPoin(Member member, double tagihan) {
+        System.out.println("\n--- Redeem Poin ---");
+        System.out.println("Poin Anda     : " + member.getPoints());
+        System.out.printf("Nilai Poin    : Rp %.0f (@ 1 poin = Rp 2)%n", member.getPoints() * 2.0);
+        System.out.printf("Total Tagihan : Rp %.2f%n", tagihan);
+        System.out.print("Gunakan poin untuk potongan? (Y/N) > ");
+        String jawab = sc.nextLine().trim();
+        if (!jawab.equalsIgnoreCase("Y")) return 0;
+
+        double potongan = member.usePoints(tagihan);
+        System.out.printf("Poin digunakan. Potongan: Rp %.0f%n", potongan);
+        System.out.println("Sisa Poin    : " + member.getPoints());
+        return potongan;
+    }
+
+    // =====================================================================
+    // 7. PILIH CHANNEL PEMBAYARAN
     // =====================================================================
     private static PaymentChannel pilihPembayaran(double totalIDR, Currency currency) {
         System.out.println("\nPilih channel pembayaran:");
@@ -282,9 +401,11 @@ public class KohiSopApp {
     }
 
     // =====================================================================
-    // 6. CETAK KUITANSI
+    // 8. CETAK KUITANSI
     // =====================================================================
-    private static void cetakKuitansi(Order order, PaymentChannel payment, Currency currency) {
+    private static void cetakKuitansi(Order order, PaymentChannel payment, Currency currency,
+                                      Member member, int poinSebelum, int poinDapat,
+                                      int poinSesudah, double potonganPoin) {
         String sep  = "=".repeat(100);
         String line = "-".repeat(100);
 
@@ -299,8 +420,9 @@ public class KohiSopApp {
 
         double totalSebelumPajak = order.getTotalSebelumPajak();
         double totalSetelahPajak = order.getTotalSetelahPajak();
-        double diskon            = payment.hitungDiskon(totalSetelahPajak);
-        double totalFinal        = payment.hitungTotal(totalSetelahPajak);
+        double totalSetelahRedeem = totalSetelahPajak - potonganPoin;
+        double diskon             = payment.hitungDiskon(totalSetelahRedeem);
+        double totalFinal         = payment.hitungTotal(totalSetelahRedeem);
 
         double totalSebelumPajakMU = currency.konversiDariIDR(totalSebelumPajak);
         double totalFinalMU        = currency.konversiDariIDR(totalFinal);
@@ -308,20 +430,54 @@ public class KohiSopApp {
         System.out.println(sep);
         System.out.printf("%-48s %12.2f IDR%n", "Grand Total (sebelum pajak):", totalSebelumPajak);
         System.out.printf("%-48s %12.2f IDR%n", "Grand Total (setelah pajak):", totalSetelahPajak);
-        System.out.printf("%-48s %12.2f IDR%n", "Diskon " + payment.getNamaChannel() + " (" + (int)(payment.getDiskon()*100) + "%):", diskon);
+
+        if (potonganPoin > 0) {
+            System.out.printf("%-48s %12.2f IDR%n", "Potongan Poin Member:", -potonganPoin);
+            System.out.printf("%-48s %12.2f IDR%n", "Total setelah Potongan Poin:", totalSetelahRedeem);
+        }
+
+        System.out.printf("%-48s %12.2f IDR%n",
+                "Diskon " + payment.getNamaChannel() + " (" + (int)(payment.getDiskon()*100) + "%):", diskon);
         if (payment.getBiayaAdmin() > 0)
             System.out.printf("%-48s %12.2f IDR%n", "Biaya Admin:", payment.getBiayaAdmin());
         System.out.println(line);
         System.out.printf("%-48s %12.2f IDR%n", "Total Tagihan (IDR):", totalFinal);
+
+        // --- Informasi Member & Poin ---
+        if (member != null) {
+            System.out.println(line);
+            System.out.printf("%-48s %s%n", "Member:", member.getMemberName());
+            System.out.printf("%-48s %s%n", "Kode Member:", member.getMemberCode());
+            System.out.printf("%-48s %d poin%n", "Point Sebelum Transaksi:", poinSebelum);
+            System.out.printf("%-48s %d poin%n", "Point Didapat:", poinDapat
+                    + (member.getMemberCode().contains("A") ? " (bonus x2, kode mengandung 'A')" : ""));
+            System.out.printf("%-48s %d poin%n", "Point Sesudah:", poinSesudah);
+        }
+
+        System.out.println(line);
         System.out.println();
         System.out.printf("Mata Uang Pembayaran           : %s%n", currency.getNamaMataUang());
         System.out.printf("Total sebelum pajak (%s)       : %s %.4f%n",
                 currency.getNamaMataUang(), currency.getSimbol(), totalSebelumPajakMU);
         System.out.printf("Total tagihan akhir (%s)       : %s %.4f%n",
                 currency.getNamaMataUang(), currency.getSimbol(), totalFinalMU);
+
+        // Catatan jika mata uang bukan IDR dan punya poin
+        if (member != null && !currency.getNamaMataUang().equals("IDR") && member.getPoints() > 0) {
+            System.out.println("\n[INFO] Poin tidak dapat ditukar karena pembayaran bukan IDR.");
+        }
+
         System.out.println(sep);
         cetakTengah("Terima kasih dan silakan datang kembali!", 100);
         System.out.println(sep);
+
+        // Info pelanggan ke-N untuk kitchen
+        System.out.printf("\n[Kitchen] Pelanggan ke-%d dalam batch. ", customerCount + 1);
+        if (customerCount + 1 == 3) {
+            System.out.println("Batch berikutnya akan memproses dapur!");
+        } else {
+            System.out.printf("Dapur diproses setiap 3 pelanggan.%n");
+        }
     }
 
     private static void cetakBagianKuitansi(String kategori, List<OrderItem> items,
