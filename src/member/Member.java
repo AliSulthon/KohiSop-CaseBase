@@ -19,6 +19,11 @@ public class Member {
         if (amount > 0) this.points += amount;
     }
 
+    public double calculatePointDiscount(double tagihanIDR) {
+        if (points <= 0 || tagihanIDR <= 0) return 0;
+        return Math.min(points * 2.0, tagihanIDR);
+    }
+
     /**
      * Gunakan sejumlah poin. Jika nilai poin (poin * 2) melebihi tagihan,
      * hanya poin yang diperlukan yang dipakai. Kembalikan nilai IDR yang dipotong.
@@ -27,7 +32,7 @@ public class Member {
      * @return potongan IDR dari poin yang digunakan
      */
     public double usePoints(double tagihanIDR) {
-        if (points <= 0) return 0;
+        if (points <= 0 || tagihanIDR <= 0) return 0;
         double nilaiPoin = points * 2.0;
         if (nilaiPoin <= tagihanIDR) {
             // Pakai semua poin
@@ -37,7 +42,7 @@ public class Member {
             // Hitung berapa poin yang diperlukan (ceil)
             int poinDipakai = (int) Math.ceil(tagihanIDR / 2.0);
             points -= poinDipakai;
-            return poinDipakai * 2.0;
+            return Math.min(poinDipakai * 2.0, tagihanIDR);
         }
     }
 

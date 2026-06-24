@@ -39,6 +39,17 @@ public class MemberDatabase {
         memberDatabase.add(member);
     }
 
+    public static MembershipResult findOrCreateByName(String name) {
+        Member existing = findMemberByName(name);
+        if (existing != null) {
+            return new MembershipResult(existing, true);
+        }
+
+        Member member = new Member(generateMemberCode(), name, 0);
+        addMember(member);
+        return new MembershipResult(member, false);
+    }
+
     /**
      * Cari member berdasarkan nama (case-insensitive).
      * Return null jika tidak ditemukan.

@@ -16,6 +16,10 @@ public class KitchenProcessor {
      * @param semuaOrderItems list OrderItem dari semua pelanggan dalam batch ini
      */
     public static void processKitchenOrders(List<List<OrderItem>> semuaOrderItems) {
+        System.out.print(formatKitchenOrders(semuaOrderItems));
+    }
+
+    public static String formatKitchenOrders(List<List<OrderItem>> semuaOrderItems) {
         // --- Tim Makanan: PriorityQueue harga descending ---
         PriorityQueue<OrderItem> queueMakanan = new PriorityQueue<>(
                 Comparator.comparingDouble((OrderItem oi) -> oi.getItem().getHarga()).reversed()
@@ -37,26 +41,27 @@ public class KitchenProcessor {
         }
 
         // ---- Cetak output dapur ----
+        StringBuilder output = new StringBuilder();
         String sep = "=".repeat(50);
-        System.out.println("\n" + sep);
-        System.out.println("          KITCHEN PROCESSING SYSTEM");
-        System.out.println(sep);
+        output.append("\n").append(sep).append("\n");
+        output.append("          KITCHEN PROCESSING SYSTEM\n");
+        output.append(sep).append("\n");
 
-        System.out.println("\n=== TIM MAKANAN ===");
+        output.append("\n=== TIM MAKANAN ===\n");
         if (queueMakanan.isEmpty()) {
-            System.out.println("  (tidak ada pesanan makanan)");
+            output.append("  (tidak ada pesanan makanan)\n");
         } else {
             int no = 1;
             while (!queueMakanan.isEmpty()) {
                 OrderItem oi = queueMakanan.poll();
-                System.out.printf("  %d. %-35s (Rp %.0f) x%d%n",
-                        no++, oi.getItem().getNama(), oi.getItem().getHarga(), oi.getKuantitas());
+                output.append(String.format("  %d. %-35s (Rp %.0f) x%d%n",
+                        no++, oi.getItem().getNama(), oi.getItem().getHarga(), oi.getKuantitas()));
             }
         }
 
-        System.out.println("\n=== TIM MINUMAN ===");
+        output.append("\n=== TIM MINUMAN ===\n");
         if (stackMinuman.isEmpty()) {
-            System.out.println("  (tidak ada pesanan minuman)");
+            output.append("  (tidak ada pesanan minuman)\n");
         } else {
             int no = 1;
             // Pop dari stack = LIFO
@@ -64,11 +69,12 @@ public class KitchenProcessor {
             temp.addAll(stackMinuman); // copy to preserve original
             while (!temp.isEmpty()) {
                 OrderItem oi = temp.pop();
-                System.out.printf("  %d. %-35s (Rp %.0f) x%d%n",
-                        no++, oi.getItem().getNama(), oi.getItem().getHarga(), oi.getKuantitas());
+                output.append(String.format("  %d. %-35s (Rp %.0f) x%d%n",
+                        no++, oi.getItem().getNama(), oi.getItem().getHarga(), oi.getKuantitas()));
             }
         }
 
-        System.out.println(sep);
+        output.append(sep).append("\n");
+        return output.toString();
     }
 }

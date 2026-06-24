@@ -52,8 +52,12 @@ public class Order {
 
     /** Bebaskan pajak semua item (untuk member dengan kode mengandung 'A') */
     public void bebaskanPajak() {
-        for (OrderItem oi : daftarMinuman) oi.setPajakDibebaskan(true);
-        for (OrderItem oi : daftarMakanan) oi.setPajakDibebaskan(true);
+        setPajakDibebaskan(true);
+    }
+
+    public void setPajakDibebaskan(boolean dibebaskan) {
+        for (OrderItem oi : daftarMinuman) oi.setPajakDibebaskan(dibebaskan);
+        for (OrderItem oi : daftarMakanan) oi.setPajakDibebaskan(dibebaskan);
     }
 
     public double getTotalMinumanSebelumPajak() {
